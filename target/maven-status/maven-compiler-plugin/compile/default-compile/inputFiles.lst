@@ -1,0 +1,7 @@
+/workspace/src/main/java/com/better/BetterKeywordApplication.java
+/workspace/src/main/java/com/better/modules/keyword/config/NaverDatalabProperties.java
+/workspace/src/main/java/com/better/modules/keyword/config/NaverSearchAdProperties.java
+/workspace/src/main/java/com/better/modules/keyword/config/NaverWebClientConfig.java
+/workspace/src/main/java/com/better/modules/keyword/service/DatalabService.java
+/workspace/src/main/java/com/better/modules/keyword/service/impl/DatalabServiceImpl.java
+/workspace/src/main/java/com/better/modules/keyword/service/model/DatalabAggregateResponse.java
