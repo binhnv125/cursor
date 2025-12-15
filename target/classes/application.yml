@@ -1,0 +1,11 @@
+naver:
+  datalab:
+    base-url: "https://openapi.naver.com"
+    client-id: "${NAVER_DATALAB_CLIENT_ID:}"
+    client-secret: "${NAVER_DATALAB_CLIENT_SECRET:}"
+  searchad:
+    base-url: "https://api.searchad.naver.com"
+    api-key: "${NAVER_SEARCHAD_API_KEY:}"
+    secret-key: "${NAVER_SEARCHAD_SECRET_KEY:}"
+    customer-id: "${NAVER_SEARCHAD_CUSTOMER_ID:}"
+
