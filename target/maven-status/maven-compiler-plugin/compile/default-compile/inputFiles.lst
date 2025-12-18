@@ -4,6 +4,8 @@
 /workspace/src/main/java/com/example/keywordextractor/api/KeywordExtractionController.java
 /workspace/src/main/java/com/example/keywordextractor/clients/AnthropicClient.java
 /workspace/src/main/java/com/example/keywordextractor/clients/NaverCredentialManager.java
+/workspace/src/main/java/com/example/keywordextractor/clients/NaverCredentialStore.java
+/workspace/src/main/java/com/example/keywordextractor/clients/NaverQuotaService.java
 /workspace/src/main/java/com/example/keywordextractor/clients/NaverSearchAdAuth.java
 /workspace/src/main/java/com/example/keywordextractor/clients/NaverSearchAdClient.java
 /workspace/src/main/java/com/example/keywordextractor/clients/NoNaverCredentialAvailableException.java
@@ -22,6 +24,11 @@
 /workspace/src/main/java/com/example/keywordextractor/domain/KeywordStats.java
 /workspace/src/main/java/com/example/keywordextractor/domain/KeywordType.java
 /workspace/src/main/java/com/example/keywordextractor/domain/SessionStatus.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialEntity.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialRepository.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageEntity.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageId.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageRepository.java
 /workspace/src/main/java/com/example/keywordextractor/service/KeywordBackgroundProcessor.java
 /workspace/src/main/java/com/example/keywordextractor/service/KeywordClassifier.java
 /workspace/src/main/java/com/example/keywordextractor/service/KeywordExtractionService.java

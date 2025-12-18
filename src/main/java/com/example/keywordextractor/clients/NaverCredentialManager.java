@@ -1,6 +1,7 @@
 package com.example.keywordextractor.clients;
 
 import com.example.keywordextractor.config.NaverSearchAdProperties;
+import com.example.keywordextractor.persistence.NaverCredentialUsageRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -33,25 +34,36 @@ public class NaverCredentialManager {
   private final AtomicReference<List<String>> enabledIds;
   private final AtomicInteger rr;
   private final Clock clock;
+  private final NaverCredentialStore credentialStore;
+  private final NaverQuotaService quotaService;
+  private final NaverCredentialUsageRepository usageRepo;
 
-  public NaverCredentialManager(NaverSearchAdProperties props) {
+  public NaverCredentialManager(
+      NaverSearchAdProperties props,
+      NaverCredentialStore credentialStore,
+      NaverQuotaService quotaService,
+      NaverCredentialUsageRepository usageRepo) {
     this.states = new ConcurrentHashMap<>();
     this.enabledIds = new AtomicReference<>(List.of());
     this.rr = new AtomicInteger(0);
 
     ZoneId zone = ZoneId.of(Optional.ofNullable(props.timezone()).orElse("Asia/Seoul"));
     this.clock = Clock.system(zone);
+    this.credentialStore = credentialStore;
+    this.quotaService = quotaService;
+    this.usageRepo = usageRepo;
 
-    // bootstrap from config
-    for (var c : props.resolvedCredentials()) {
-      upsert(
-          new UpsertRequest(
-              c.customerId(),
-              c.apiKey(),
-              c.apiSecret(),
-              true,
-              DEFAULT_DAILY_LIMIT,
-              props.resolvedPerCredentialMaxInFlight()));
+    // Load from DB (credentials may be seeded by NaverCredentialStore)
+    for (var c : credentialStore.listAll()) {
+      states.put(
+          c.getCustomerId(),
+          new State(
+              c.getCustomerId(),
+              c.getApiKey(),
+              c.getApiSecret(),
+              c.isEnabled(),
+              c.getDailyLimit(),
+              c.getMaxInFlight()));
     }
 
     if (states.isEmpty()) {
@@ -79,26 +91,35 @@ public class NaverCredentialManager {
       String id = ids.get((start + i) % ids.size());
       State s = states.get(id);
       if (s == null) continue;
-      if (s.tryAcquire(today)) {
+      if (s.tryAcquire(today, quotaService)) {
         return new Lease(s);
       }
     }
 
-    // If RR fails (capacity/quota), pick best remaining (least used, still has quota)
+    // If RR fails, pick best remaining (least used in DB for today)
+    var usage =
+        usageRepo.findForDate(
+            today,
+            ids);
+    var usedMap = new java.util.HashMap<String, Integer>();
+    for (var u : usage) {
+      usedMap.put(u.getCustomerId(), u.getUsedCount());
+    }
+
     List<State> candidates = new ArrayList<>();
     for (String id : ids) {
       State s = states.get(id);
       if (s != null) {
-        s.resetIfNeeded(today);
-        if (s.hasQuota()) {
+        int used = usedMap.getOrDefault(id, 0);
+        if (used < s.dailyLimit) {
           candidates.add(s);
         }
       }
     }
 
-    candidates.sort(Comparator.comparingInt(State::usedToday));
+    candidates.sort(Comparator.comparingInt(s -> usedMap.getOrDefault(s.customerId, 0)));
     for (State s : candidates) {
-      if (s.tryAcquire(today)) {
+      if (s.tryAcquire(today, quotaService)) {
         return new Lease(s);
       }
     }
@@ -109,8 +130,15 @@ public class NaverCredentialManager {
 
   public List<CredentialView> list() {
     LocalDate today = LocalDate.now(clock);
+    List<String> ids = states.keySet().stream().sorted().toList();
+    var usage = ids.isEmpty() ? List.<com.example.keywordextractor.persistence.NaverCredentialUsageEntity>of() : usageRepo.findForDate(today, ids);
+    var usedMap = new java.util.HashMap<String, Integer>();
+    for (var u : usage) {
+      usedMap.put(u.getCustomerId(), u.getUsedCount());
+    }
+
     return states.values().stream()
-        .map(s -> s.view(today))
+        .map(s -> s.view(today, usedMap.getOrDefault(s.customerId, 0)))
         .sorted(Comparator.comparing(CredentialView::customerId))
         .toList();
   }
@@ -125,11 +153,13 @@ public class NaverCredentialManager {
     int maxInFlight = req.maxInFlight() == null || req.maxInFlight() < 1 ? 8 : req.maxInFlight();
     boolean enabled = req.enabled() == null || req.enabled();
 
+    credentialStore.upsert(req.customerId(), req.apiKey(), req.apiSecret(), enabled, dailyLimit, maxInFlight);
+
     states.compute(
         req.customerId(),
         (id, existing) -> {
           if (existing == null) {
-            return new State(id, req.apiKey(), req.apiSecret(), enabled, dailyLimit, maxInFlight, clock);
+            return new State(id, req.apiKey(), req.apiSecret(), enabled, dailyLimit, maxInFlight);
           }
           existing.update(req.apiKey(), req.apiSecret(), enabled, dailyLimit, maxInFlight);
           return existing;
@@ -142,6 +172,7 @@ public class NaverCredentialManager {
     if (isBlank(customerId)) {
       throw new IllegalArgumentException("customerId is required");
     }
+    credentialStore.delete(customerId);
     states.remove(customerId);
     rebuildEnabledIds();
   }
@@ -151,6 +182,7 @@ public class NaverCredentialManager {
     if (s == null) {
       throw new IllegalArgumentException("Unknown customerId: " + customerId);
     }
+    credentialStore.setEnabled(customerId, enabled);
     s.setEnabled(enabled);
     rebuildEnabledIds();
   }
@@ -218,13 +250,9 @@ public class NaverCredentialManager {
     private volatile boolean enabled;
     private volatile int dailyLimit;
 
-    private final AtomicInteger usedToday;
     private final AtomicInteger inFlight;
-    private final AtomicReference<LocalDate> day;
     private volatile Semaphore semaphore;
     private volatile int maxInFlight;
-
-    private final Clock clock;
 
     State(
         String customerId,
@@ -232,8 +260,7 @@ public class NaverCredentialManager {
         String apiSecret,
         boolean enabled,
         int dailyLimit,
-        int maxInFlight,
-        Clock clock) {
+        int maxInFlight) {
       this.customerId = customerId;
       this.apiKey = apiKey;
       this.apiSecret = apiSecret;
@@ -241,10 +268,7 @@ public class NaverCredentialManager {
       this.dailyLimit = dailyLimit;
       this.maxInFlight = maxInFlight;
       this.semaphore = new Semaphore(maxInFlight);
-      this.usedToday = new AtomicInteger(0);
       this.inFlight = new AtomicInteger(0);
-      this.day = new AtomicReference<>(LocalDate.now(clock));
-      this.clock = clock;
     }
 
     String customerId() {
@@ -263,10 +287,6 @@ public class NaverCredentialManager {
       return enabled;
     }
 
-    int usedToday() {
-      return usedToday.get();
-    }
-
     void setEnabled(boolean enabled) {
       this.enabled = enabled;
     }
@@ -282,42 +302,24 @@ public class NaverCredentialManager {
       }
     }
 
-    void resetIfNeeded(LocalDate today) {
-      LocalDate prev = day.get();
-      if (!prev.equals(today) && day.compareAndSet(prev, today)) {
-        usedToday.set(0);
-      }
-    }
-
-    boolean hasQuota() {
-      LocalDate today = LocalDate.now(clock);
-      resetIfNeeded(today);
-      return usedToday.get() < dailyLimit;
-    }
-
-    boolean tryAcquire(LocalDate today) {
+    boolean tryAcquire(LocalDate today, NaverQuotaService quotaService) {
       if (!enabled) {
         return false;
       }
-      resetIfNeeded(today);
 
       // capacity first
       if (!semaphore.tryAcquire()) {
         return false;
       }
 
-      // then quota (CAS increment)
-      while (true) {
-        int u = usedToday.get();
-        if (u >= dailyLimit) {
-          semaphore.release();
-          return false;
-        }
-        if (usedToday.compareAndSet(u, u + 1)) {
-          inFlight.incrementAndGet();
-          return true;
-        }
+      // then quota (DB atomic)
+      boolean consumed = quotaService.tryConsume(customerId, today, dailyLimit);
+      if (!consumed) {
+        semaphore.release();
+        return false;
       }
+      inFlight.incrementAndGet();
+      return true;
     }
 
     void release() {
@@ -325,9 +327,7 @@ public class NaverCredentialManager {
       semaphore.release();
     }
 
-    CredentialView view(LocalDate today) {
-      resetIfNeeded(today);
-      int used = usedToday.get();
+    CredentialView view(LocalDate today, int used) {
       int remain = Math.max(0, dailyLimit - used);
       return new CredentialView(customerId, enabled, dailyLimit, used, remain, maxInFlight, inFlight.get(), today);
     }

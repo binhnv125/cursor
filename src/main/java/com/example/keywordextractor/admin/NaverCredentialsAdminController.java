@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/admin/naver-credentials")
@@ -28,29 +30,36 @@ public class NaverCredentialsAdminController {
   }
 
   @GetMapping
-  public List<CredentialView> list() {
-    return manager.list();
+  public Mono<List<CredentialView>> list() {
+    return Mono.fromCallable(manager::list).subscribeOn(Schedulers.boundedElastic());
   }
 
   @PostMapping
-  public void create(@Valid @RequestBody UpsertBody body) {
-    manager.upsert(body.toReq());
+  public Mono<Void> create(@Valid @RequestBody UpsertBody body) {
+    return Mono.fromRunnable(() -> manager.upsert(body.toReq())).subscribeOn(Schedulers.boundedElastic()).then();
   }
 
   @PutMapping("/{customerId}")
-  public void update(@PathVariable @NotBlank String customerId, @Valid @RequestBody UpsertBody body) {
-    manager.upsert(body.toReq(customerId));
+  public Mono<Void> update(
+      @PathVariable @NotBlank String customerId, @Valid @RequestBody UpsertBody body) {
+    return Mono.fromRunnable(() -> manager.upsert(body.toReq(customerId)))
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
   }
 
   @DeleteMapping("/{customerId}")
-  public void delete(@PathVariable @NotBlank String customerId) {
-    manager.delete(customerId);
+  public Mono<Void> delete(@PathVariable @NotBlank String customerId) {
+    return Mono.fromRunnable(() -> manager.delete(customerId))
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
   }
 
   @PostMapping("/{customerId}/enabled")
-  public void setEnabled(
+  public Mono<Void> setEnabled(
       @PathVariable @NotBlank String customerId, @RequestParam boolean enabled) {
-    manager.setEnabled(customerId, enabled);
+    return Mono.fromRunnable(() -> manager.setEnabled(customerId, enabled))
+        .subscribeOn(Schedulers.boundedElastic())
+        .then();
   }
 
   public record UpsertBody(

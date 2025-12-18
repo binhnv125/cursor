@@ -1,3 +1,4 @@
+com/example/keywordextractor/persistence/NaverCredentialEntity.class
 com/example/keywordextractor/service/SessionNotFoundException.class
 com/example/keywordextractor/service/KeywordSanitizer.class
 com/example/keywordextractor/clients/NaverCredentialManager.class
@@ -13,6 +14,7 @@ com/example/keywordextractor/admin/NaverCredentialsAdminController.class
 com/example/keywordextractor/clients/NaverSearchAdClient$MedianBidResult.class
 com/example/keywordextractor/clients/AnthropicClient$MessagesResponse.class
 com/example/keywordextractor/config/AnthropicProperties.class
+com/example/keywordextractor/persistence/NaverCredentialRepository.class
 com/example/keywordextractor/KeywordExtractorApplication.class
 com/example/keywordextractor/service/NaverEnrichmentService.class
 com/example/keywordextractor/service/KeywordJsonParser.class
@@ -21,12 +23,15 @@ com/example/keywordextractor/clients/NaverSearchAdClient.class
 com/example/keywordextractor/clients/NoNaverCredentialAvailableException.class
 com/example/keywordextractor/config/HttpClientsConfig.class
 com/example/keywordextractor/clients/AnthropicClient$ContentBlock.class
+com/example/keywordextractor/persistence/NaverCredentialUsageEntity.class
 com/example/keywordextractor/domain/KeywordExtractionSession.class
 com/example/keywordextractor/api/KeywordExtractionController.class
 com/example/keywordextractor/clients/AnthropicClient$MessagesRequest.class
 com/example/keywordextractor/api/ApiExceptionHandler$ErrorResponse.class
+com/example/keywordextractor/persistence/NaverCredentialUsageId.class
 com/example/keywordextractor/domain/KeywordResult.class
 com/example/keywordextractor/config/NaverSearchAdProperties.class
+com/example/keywordextractor/persistence/NaverCredentialUsageRepository.class
 com/example/keywordextractor/domain/KeywordExtractionAllResponse.class
 com/example/keywordextractor/service/KeywordExtractionService.class
 com/example/keywordextractor/domain/KeywordExtractionCheckResponse.class
@@ -43,6 +48,7 @@ com/example/keywordextractor/config/AppProperties.class
 com/example/keywordextractor/config/AppProperties$Session.class
 com/example/keywordextractor/domain/KeywordExtractionResponse.class
 com/example/keywordextractor/service/KeywordBackgroundProcessor.class
+com/example/keywordextractor/clients/NaverCredentialStore.class
 com/example/keywordextractor/domain/KeywordResultStatus.class
 com/example/keywordextractor/admin/NaverCredentialsAdminController$UpsertBody.class
 com/example/keywordextractor/service/KeywordClassifier.class
@@ -52,3 +58,4 @@ com/example/keywordextractor/config/NaverSearchAdProperties$Credential.class
 com/example/keywordextractor/domain/KeywordBid.class
 com/example/keywordextractor/clients/NaverCredentialManager$State.class
 com/example/keywordextractor/domain/KeywordType.class
+com/example/keywordextractor/clients/NaverQuotaService.class
