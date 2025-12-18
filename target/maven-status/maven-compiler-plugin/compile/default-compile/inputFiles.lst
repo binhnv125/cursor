@@ -1,10 +1,12 @@
 /workspace/src/main/java/com/example/keywordextractor/KeywordExtractorApplication.java
+/workspace/src/main/java/com/example/keywordextractor/admin/NaverCredentialsAdminController.java
 /workspace/src/main/java/com/example/keywordextractor/api/ApiExceptionHandler.java
 /workspace/src/main/java/com/example/keywordextractor/api/KeywordExtractionController.java
 /workspace/src/main/java/com/example/keywordextractor/clients/AnthropicClient.java
-/workspace/src/main/java/com/example/keywordextractor/clients/NaverCredentialsProvider.java
+/workspace/src/main/java/com/example/keywordextractor/clients/NaverCredentialManager.java
 /workspace/src/main/java/com/example/keywordextractor/clients/NaverSearchAdAuth.java
 /workspace/src/main/java/com/example/keywordextractor/clients/NaverSearchAdClient.java
+/workspace/src/main/java/com/example/keywordextractor/clients/NoNaverCredentialAvailableException.java
 /workspace/src/main/java/com/example/keywordextractor/config/AnthropicProperties.java
 /workspace/src/main/java/com/example/keywordextractor/config/AppProperties.java
 /workspace/src/main/java/com/example/keywordextractor/config/HttpClientsConfig.java

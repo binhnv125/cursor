@@ -1,7 +1,6 @@
 package com.example.keywordextractor.clients;
 
 import com.example.keywordextractor.config.NaverSearchAdProperties;
-import com.example.keywordextractor.config.NaverSearchAdProperties.Credential;
 import com.example.keywordextractor.domain.KeywordBid;
 import com.example.keywordextractor.domain.KeywordStats;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -23,13 +22,13 @@ import reactor.core.publisher.Mono;
 public class NaverSearchAdClient {
   private final WebClient webClient;
   private final NaverSearchAdProperties props;
-  private final NaverCredentialsProvider credentialsProvider;
+  private final NaverCredentialManager credentialManager;
 
   public NaverSearchAdClient(
-      WebClient webClient, NaverSearchAdProperties props, NaverCredentialsProvider credentialsProvider) {
+      WebClient webClient, NaverSearchAdProperties props, NaverCredentialManager credentialManager) {
     this.webClient = webClient;
     this.props = props;
-    this.credentialsProvider = credentialsProvider;
+    this.credentialManager = credentialManager;
   }
 
   public Mono<Map<String, KeywordStats>> fetchKeywordStatsBatch(List<String> keywords) {
@@ -46,9 +45,9 @@ public class NaverSearchAdClient {
     return Mono.defer(
         () -> {
           return Mono.usingWhen(
-              credentialsProvider.acquire(),
+              credentialManager.acquire(),
               lease ->
-                  signedGet(lease.credential(), pathWithQuery)
+                  signedGet(lease, pathWithQuery)
                       .bodyToMono(KeywordToolResponse.class)
                       .timeout(timeout())
                       .map(
@@ -83,9 +82,9 @@ public class NaverSearchAdClient {
     return Mono.defer(
         () -> {
           return Mono.usingWhen(
-              credentialsProvider.acquire(),
+              credentialManager.acquire(),
               lease ->
-                  signedPost(lease.credential(), pathWithQuery, req)
+                  signedPost(lease, pathWithQuery, req)
                       .bodyToMono(MedianBidResponse.class)
                       .timeout(timeout())
                       .map(
@@ -120,33 +119,34 @@ public class NaverSearchAdClient {
         .onErrorReturn(Map.of());
   }
 
-  private WebClient.ResponseSpec signedGet(Credential cred, String pathWithQuery) {
+  private WebClient.ResponseSpec signedGet(NaverCredentialManager.Lease lease, String pathWithQuery) {
     return webClient
         .get()
         .uri(props.baseUrl() + pathWithQuery)
-        .headers(h -> signHeaders(h, cred, "GET", pathWithQuery))
+        .headers(h -> signHeaders(h, lease, "GET", pathWithQuery))
         .accept(MediaType.APPLICATION_JSON)
         .retrieve();
   }
 
-  private WebClient.ResponseSpec signedPost(Credential cred, String path, Object body) {
+  private WebClient.ResponseSpec signedPost(NaverCredentialManager.Lease lease, String path, Object body) {
     return webClient
         .post()
         .uri(props.baseUrl() + path)
-        .headers(h -> signHeaders(h, cred, "POST", path))
+        .headers(h -> signHeaders(h, lease, "POST", path))
         .contentType(MediaType.APPLICATION_JSON)
         .accept(MediaType.APPLICATION_JSON)
         .bodyValue(body)
         .retrieve();
   }
 
-  private void signHeaders(HttpHeaders headers, Credential cred, String method, String pathWithQuery) {
+  private void signHeaders(
+      HttpHeaders headers, NaverCredentialManager.Lease lease, String method, String pathWithQuery) {
     String ts = String.valueOf(System.currentTimeMillis());
-    String sig = NaverSearchAdAuth.signature(ts, method, pathWithQuery, cred.apiSecret());
+    String sig = NaverSearchAdAuth.signature(ts, method, pathWithQuery, lease.apiSecret());
 
     headers.set("X-Timestamp", ts);
-    headers.set("X-API-KEY", cred.apiKey());
-    headers.set("X-Customer", cred.customerId());
+    headers.set("X-API-KEY", lease.apiKey());
+    headers.set("X-Customer", lease.customerId());
     headers.set("X-Signature", sig);
   }
 

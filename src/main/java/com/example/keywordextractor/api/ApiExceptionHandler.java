@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.example.keywordextractor.clients.NoNaverCredentialAvailableException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -22,5 +23,11 @@ public class ApiExceptionHandler {
   public ResponseEntity<ErrorResponse> handleBadRequest(IllegalArgumentException e) {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
         .body(new ErrorResponse("BAD_REQUEST", e.getMessage(), Instant.now()));
+  }
+
+  @ExceptionHandler(NoNaverCredentialAvailableException.class)
+  public ResponseEntity<ErrorResponse> handleNaverQuota(NoNaverCredentialAvailableException e) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .body(new ErrorResponse("NAVER_NO_CREDENTIAL_AVAILABLE", e.getMessage(), Instant.now()));
   }
 }

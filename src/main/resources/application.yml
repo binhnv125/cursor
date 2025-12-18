@@ -29,4 +29,5 @@ naverSearchAd:
   #     apiSecret: ${NAVER_SEARCHAD_API_SECRET_2}
   #     customerId: ${NAVER_SEARCHAD_CUSTOMER_ID_2}
   perCredentialMaxInFlight: 8
+  timezone: Asia/Seoul
   timeout: 5s

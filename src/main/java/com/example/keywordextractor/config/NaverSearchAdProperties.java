@@ -16,6 +16,8 @@ public record NaverSearchAdProperties(
     List<Credential> credentials,
     // Limit per credential to avoid 429s; tuned with Naver quota
     Integer perCredentialMaxInFlight,
+    // Timezone used for \"daily\" quota reset
+    String timezone,
     Duration timeout) {
 
   public record Credential(String apiKey, String apiSecret, String customerId) {}
