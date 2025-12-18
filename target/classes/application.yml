@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+app:
+  session:
+    ttl: 30m
+  enrichment:
+    firstPageSize: 20
+    concurrency: 8
+
+anthropic:
+  baseUrl: https://api.anthropic.com
+  apiKey: ${ANTHROPIC_API_KEY:}
+  model: claude-sonnet-4-5-20250929
+  maxTokens: 1200
+
+naverSearchAd:
+  baseUrl: https://api.searchad.naver.com
+  apiKey: ${NAVER_SEARCHAD_API_KEY:}
+  apiSecret: ${NAVER_SEARCHAD_API_SECRET:}
+  customerId: ${NAVER_SEARCHAD_CUSTOMER_ID:}
+  timeout: 5s
