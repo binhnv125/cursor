@@ -1,6 +1,7 @@
 package com.example.keywordextractor.clients;
 
 import com.example.keywordextractor.config.NaverSearchAdProperties;
+import com.example.keywordextractor.config.NaverSearchAdProperties.Credential;
 import com.example.keywordextractor.domain.KeywordBid;
 import com.example.keywordextractor.domain.KeywordStats;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -22,10 +23,13 @@ import reactor.core.publisher.Mono;
 public class NaverSearchAdClient {
   private final WebClient webClient;
   private final NaverSearchAdProperties props;
+  private final NaverCredentialsProvider credentialsProvider;
 
-  public NaverSearchAdClient(WebClient webClient, NaverSearchAdProperties props) {
+  public NaverSearchAdClient(
+      WebClient webClient, NaverSearchAdProperties props, NaverCredentialsProvider credentialsProvider) {
     this.webClient = webClient;
     this.props = props;
+    this.credentialsProvider = credentialsProvider;
   }
 
   public Mono<Map<String, KeywordStats>> fetchKeywordStatsBatch(List<String> keywords) {
@@ -41,24 +45,27 @@ public class NaverSearchAdClient {
 
     return Mono.defer(
         () -> {
-          requireConfigured();
-          return signedGet(pathWithQuery)
-              .bodyToMono(KeywordToolResponse.class)
-              .timeout(timeout())
-              .map(
-                  resp -> {
-                    if (resp == null || resp.keywordList == null) {
-                      return Map.<String, KeywordStats>of();
-                    }
-                    Map<String, KeywordStats> out = new HashMap<>();
-                    for (KeywordToolItem it : resp.keywordList) {
-                      if (it == null || it.relKeyword == null || it.relKeyword.isBlank()) {
-                        continue;
-                      }
-                      out.put(it.relKeyword, it.toStats());
-                    }
-                    return out;
-                  });
+          return Mono.usingWhen(
+              credentialsProvider.acquire(),
+              lease ->
+                  signedGet(lease.credential(), pathWithQuery)
+                      .bodyToMono(KeywordToolResponse.class)
+                      .timeout(timeout())
+                      .map(
+                          resp -> {
+                            if (resp == null || resp.keywordList == null) {
+                              return Map.<String, KeywordStats>of();
+                            }
+                            Map<String, KeywordStats> out = new HashMap<>();
+                            for (KeywordToolItem it : resp.keywordList) {
+                              if (it == null || it.relKeyword == null || it.relKeyword.isBlank()) {
+                                continue;
+                              }
+                              out.put(it.relKeyword, it.toStats());
+                            }
+                            return out;
+                          }),
+              lease -> Mono.fromRunnable(lease::close));
         });
   }
 
@@ -75,24 +82,27 @@ public class NaverSearchAdClient {
 
     return Mono.defer(
         () -> {
-          requireConfigured();
-          return signedPost(pathWithQuery, req)
-              .bodyToMono(MedianBidResponse.class)
-              .timeout(timeout())
-              .map(
-                  resp -> {
-                    if (resp == null || resp.items == null) {
-                      return Map.<String, Integer>of();
-                    }
-                    Map<String, Integer> out = new HashMap<>();
-                    for (MedianBidResult r : resp.items) {
-                      if (r == null || r.keyword == null || r.keyword.isBlank()) {
-                        continue;
-                      }
-                      out.put(r.keyword, r.resolvedBid());
-                    }
-                    return out;
-                  });
+          return Mono.usingWhen(
+              credentialsProvider.acquire(),
+              lease ->
+                  signedPost(lease.credential(), pathWithQuery, req)
+                      .bodyToMono(MedianBidResponse.class)
+                      .timeout(timeout())
+                      .map(
+                          resp -> {
+                            if (resp == null || resp.items == null) {
+                              return Map.<String, Integer>of();
+                            }
+                            Map<String, Integer> out = new HashMap<>();
+                            for (MedianBidResult r : resp.items) {
+                              if (r == null || r.keyword == null || r.keyword.isBlank()) {
+                                continue;
+                              }
+                              out.put(r.keyword, r.resolvedBid());
+                            }
+                            return out;
+                          }),
+              lease -> Mono.fromRunnable(lease::close));
         });
   }
 
@@ -110,45 +120,34 @@ public class NaverSearchAdClient {
         .onErrorReturn(Map.of());
   }
 
-  private WebClient.ResponseSpec signedGet(String pathWithQuery) {
+  private WebClient.ResponseSpec signedGet(Credential cred, String pathWithQuery) {
     return webClient
         .get()
         .uri(props.baseUrl() + pathWithQuery)
-        .headers(h -> signHeaders(h, "GET", pathWithQuery))
+        .headers(h -> signHeaders(h, cred, "GET", pathWithQuery))
         .accept(MediaType.APPLICATION_JSON)
         .retrieve();
   }
 
-  private WebClient.ResponseSpec signedPost(String path, Object body) {
+  private WebClient.ResponseSpec signedPost(Credential cred, String path, Object body) {
     return webClient
         .post()
         .uri(props.baseUrl() + path)
-        .headers(h -> signHeaders(h, "POST", path))
+        .headers(h -> signHeaders(h, cred, "POST", path))
         .contentType(MediaType.APPLICATION_JSON)
         .accept(MediaType.APPLICATION_JSON)
         .bodyValue(body)
         .retrieve();
   }
 
-  private void signHeaders(HttpHeaders headers, String method, String pathWithQuery) {
+  private void signHeaders(HttpHeaders headers, Credential cred, String method, String pathWithQuery) {
     String ts = String.valueOf(System.currentTimeMillis());
-    String sig = NaverSearchAdAuth.signature(ts, method, pathWithQuery, props.apiSecret());
+    String sig = NaverSearchAdAuth.signature(ts, method, pathWithQuery, cred.apiSecret());
 
     headers.set("X-Timestamp", ts);
-    headers.set("X-API-KEY", props.apiKey());
-    headers.set("X-Customer", props.customerId());
+    headers.set("X-API-KEY", cred.apiKey());
+    headers.set("X-Customer", cred.customerId());
     headers.set("X-Signature", sig);
-  }
-
-  private void requireConfigured() {
-    if (isBlank(props.apiKey()) || isBlank(props.apiSecret()) || isBlank(props.customerId())) {
-      throw new IllegalStateException(
-          "Missing NAVER_SEARCHAD_API_KEY / NAVER_SEARCHAD_API_SECRET / NAVER_SEARCHAD_CUSTOMER_ID");
-    }
-  }
-
-  private boolean isBlank(String s) {
-    return s == null || s.isBlank();
   }
 
   private Duration timeout() {

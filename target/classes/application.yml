@@ -16,7 +16,17 @@ anthropic:
 
 naverSearchAd:
   baseUrl: https://api.searchad.naver.com
+  # Option A (legacy single credential):
   apiKey: ${NAVER_SEARCHAD_API_KEY:}
   apiSecret: ${NAVER_SEARCHAD_API_SECRET:}
   customerId: ${NAVER_SEARCHAD_CUSTOMER_ID:}
+  # Option B (preferred pool; example):
+  # credentials:
+  #   - apiKey: ${NAVER_SEARCHAD_API_KEY_1}
+  #     apiSecret: ${NAVER_SEARCHAD_API_SECRET_1}
+  #     customerId: ${NAVER_SEARCHAD_CUSTOMER_ID_1}
+  #   - apiKey: ${NAVER_SEARCHAD_API_KEY_2}
+  #     apiSecret: ${NAVER_SEARCHAD_API_SECRET_2}
+  #     customerId: ${NAVER_SEARCHAD_CUSTOMER_ID_2}
+  perCredentialMaxInFlight: 8
   timeout: 5s
