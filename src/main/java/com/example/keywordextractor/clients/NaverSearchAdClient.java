@@ -1,6 +1,8 @@
 package com.example.keywordextractor.clients;
 
 import com.example.keywordextractor.config.NaverSearchAdProperties;
+import com.example.keywordextractor.detail.KeywordDetailResponse.NaverSearchAdRankBid;
+import com.example.keywordextractor.detail.KeywordDetailResponse.NaverSearchAdRankBid.RankBid;
 import com.example.keywordextractor.domain.KeywordBid;
 import com.example.keywordextractor.domain.KeywordStats;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -131,6 +133,101 @@ public class NaverSearchAdClient {
               return out;
             })
         .onErrorReturn(Map.of());
+  }
+
+  /**
+   * Fetch estimated rank (1..5) bids for a keyword on PC/MOBILE.
+   *
+   * <p>Uses SearchAd average-position-bid endpoint when available; falls back to median-bid.</p>
+   */
+  public Mono<NaverSearchAdRankBid> fetchRankBids(String keyword) {
+    List<String> one = List.of(keyword);
+    // Always call median-bid endpoint as baseline (per requirement), then try to replace with
+    // average-position-bid if available.
+    Mono<Map<String, List<RankBid>>> pcMedian = fallbackMedianAsRanks(one, Device.PC).onErrorReturn(Map.of());
+    Mono<Map<String, List<RankBid>>> mobileMedian =
+        fallbackMedianAsRanks(one, Device.MOBILE).onErrorReturn(Map.of());
+
+    Mono<Map<String, List<RankBid>>> pcAvg =
+        fetchAveragePositionBidsBatch(one, Device.PC).onErrorReturn(Map.of());
+    Mono<Map<String, List<RankBid>>> mobileAvg =
+        fetchAveragePositionBidsBatch(one, Device.MOBILE).onErrorReturn(Map.of());
+
+    return Mono.zip(pcMedian, mobileMedian, pcAvg, mobileAvg)
+        .map(
+            t -> {
+              List<RankBid> pc = t.getT3().getOrDefault(keyword, List.of());
+              List<RankBid> mobile = t.getT4().getOrDefault(keyword, List.of());
+              if (pc.isEmpty()) {
+                pc = t.getT1().getOrDefault(keyword, List.of());
+              }
+              if (mobile.isEmpty()) {
+                mobile = t.getT2().getOrDefault(keyword, List.of());
+              }
+              String source = (!t.getT3().isEmpty() || !t.getT4().isEmpty()) ? "AVERAGE_POSITION" : "MEDIAN";
+              return new NaverSearchAdRankBid(source, pc, mobile);
+            });
+  }
+
+  private Mono<Map<String, List<RankBid>>> fallbackMedianAsRanks(List<String> keywords, Device device) {
+    return fetchMedianBidBatch(keywords, device)
+        .map(
+            med -> {
+              Map<String, List<RankBid>> out = new HashMap<>();
+              for (String k : keywords) {
+                Integer bid = med.get(k);
+                if (bid == null) {
+                  out.put(k, List.of());
+                } else {
+                  out.put(
+                      k,
+                      List.of(
+                          new RankBid(1, bid),
+                          new RankBid(2, bid),
+                          new RankBid(3, bid),
+                          new RankBid(4, bid),
+                          new RankBid(5, bid)));
+                }
+              }
+              return out;
+            });
+  }
+
+  private Mono<Map<String, List<RankBid>>> fetchAveragePositionBidsBatch(List<String> keywords, Device device) {
+    if (keywords == null || keywords.isEmpty()) {
+      return Mono.just(Map.of());
+    }
+
+    String path = "/estimate/average-position-bid/keyword";
+    AveragePositionBidRequest req =
+        new AveragePositionBidRequest(device.name(), keywords.stream().distinct().map(MedianBidItem::new).toList());
+
+    return Mono.defer(
+        () ->
+            Mono.usingWhen(
+                credentialManager.acquire(),
+                lease ->
+                    rateLimiter
+                        .acquire(lease.customerId())
+                        .then(
+                            signedPost(lease, path, req)
+                                .bodyToMono(AveragePositionBidResponse.class)
+                                .timeout(timeout())
+                                .map(
+                                    resp -> {
+                                      if (resp == null || resp.items == null) {
+                                        return Map.<String, List<RankBid>>of();
+                                      }
+                                      Map<String, List<RankBid>> out = new HashMap<>();
+                                      for (AveragePositionBidResult r : resp.items) {
+                                        if (r == null || r.keyword == null || r.keyword.isBlank()) {
+                                          continue;
+                                        }
+                                        out.put(r.keyword, r.toRankBids());
+                                      }
+                                      return out;
+                                    })),
+                lease -> Mono.fromRunnable(lease::close)));
   }
 
   private WebClient.ResponseSpec signedGet(NaverCredentialManager.Lease lease, String pathWithQuery) {
@@ -282,5 +379,47 @@ public class NaverSearchAdClient {
       if (medianBid != null) return medianBid;
       return bidAmt;
     }
+  }
+
+  // --- average position bid (rank 1..5) ---
+  public record AveragePositionBidRequest(String device, List<MedianBidItem> items) {}
+
+  public static class AveragePositionBidResponse {
+    @JsonProperty("items")
+    public List<AveragePositionBidResult> items;
+  }
+
+  public static class AveragePositionBidResult {
+    @JsonProperty("keyword")
+    public String keyword;
+
+    @JsonProperty("bids")
+    public List<PositionBid> bids;
+
+    @JsonProperty("positionBids")
+    public List<PositionBid> positionBids;
+
+    List<RankBid> toRankBids() {
+      List<PositionBid> src = bids != null ? bids : positionBids;
+      if (src == null) {
+        return List.of();
+      }
+      List<RankBid> out = new java.util.ArrayList<>();
+      for (PositionBid b : src) {
+        if (b == null || b.position == null || b.bid == null) {
+          continue;
+        }
+        out.add(new RankBid(b.position, b.bid));
+      }
+      return out;
+    }
+  }
+
+  public static class PositionBid {
+    @JsonProperty("position")
+    public Integer position;
+
+    @JsonProperty("bid")
+    public Integer bid;
   }
 }
