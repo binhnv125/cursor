@@ -2,10 +2,10 @@ package com.example.keywordextractor.service;
 
 import com.example.keywordextractor.clients.NaverSearchAdClient;
 import com.example.keywordextractor.domain.KeywordBid;
-import com.example.keywordextractor.domain.KeywordExtractionSession;
 import com.example.keywordextractor.domain.KeywordResult;
 import com.example.keywordextractor.domain.KeywordStats;
 import com.example.keywordextractor.domain.KeywordType;
+import com.example.keywordextractor.session.RedisSessionRepository;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,13 +17,15 @@ import reactor.core.publisher.Mono;
 @Service
 public class NaverEnrichmentService {
   private final NaverSearchAdClient naver;
+  private final RedisSessionRepository sessions;
 
-  public NaverEnrichmentService(NaverSearchAdClient naver) {
+  public NaverEnrichmentService(NaverSearchAdClient naver, RedisSessionRepository sessions) {
     this.naver = naver;
+    this.sessions = sessions;
   }
 
-  public Mono<List<KeywordResult>> enrichAndUpdate(
-      KeywordExtractionSession session, List<String> keywords, int concurrency) {
+  public Mono<List<KeywordResult>> enrichAndPersist(
+      String sessionId, List<String> keywords, int concurrency) {
     if (keywords == null || keywords.isEmpty()) {
       return Mono.just(List.of());
     }
@@ -31,45 +33,50 @@ public class NaverEnrichmentService {
     List<List<String>> chunks = chunk(keywords, 30);
 
     return Flux.fromIterable(chunks)
-        .flatMap(chunk -> enrichChunk(session, chunk).onErrorResume(e -> markChunkFailed(session, chunk, e)), concurrency)
+        .flatMap(
+            chunk ->
+                enrichChunk(sessionId, chunk)
+                    .onErrorResume(e -> markChunkFailed(sessionId, chunk, e)),
+            concurrency)
         .flatMapIterable(x -> x)
         .collectList();
   }
 
-  private Mono<List<KeywordResult>> enrichChunk(KeywordExtractionSession session, List<String> chunk) {
+  private Mono<List<KeywordResult>> enrichChunk(String sessionId, List<String> chunk) {
     return Mono.zip(
             naver.fetchKeywordStatsBatch(chunk).onErrorReturn(Map.of()),
-            naver.fetchBidBatch(chunk).onErrorReturn(Map.of()),
-            (statsByKeyword, bidsByKeyword) -> {
+            naver.fetchBidBatch(chunk).onErrorReturn(Map.of()))
+        .flatMap(
+            tuple -> {
+              Map<String, KeywordStats> statsByKeyword = tuple.getT1();
+              Map<String, KeywordBid> bidsByKeyword = tuple.getT2();
               List<KeywordResult> out = new ArrayList<>();
               for (String k : chunk) {
-                KeywordType type = typeOf(session, k);
+                KeywordType type = KeywordClassifier.classify(k);
                 KeywordStats stats = statsByKeyword.get(k);
                 KeywordBid bid = bidsByKeyword.get(k);
-                KeywordResult result = KeywordResult.done(k, type, stats, bid);
-                session.markDone(result);
-                out.add(result);
+                out.add(KeywordResult.done(k, type, stats, bid));
               }
-              return out;
+
+              return Flux.fromIterable(out)
+                  .flatMap(r -> sessions.markDone(sessionId, r).thenReturn(r), 8)
+                  .collectList();
             })
-        .onErrorResume(e -> markChunkFailed(session, chunk, e));
+        .onErrorResume(e -> markChunkFailed(sessionId, chunk, e));
   }
 
   private Mono<List<KeywordResult>> markChunkFailed(
-      KeywordExtractionSession session, List<String> chunk, Throwable e) {
-    for (String k : chunk) {
-      KeywordType type = typeOf(session, k);
-      session.markFailed(k, type, e.getMessage());
-    }
-    return Mono.just(Collections.emptyList());
-  }
-
-  private KeywordType typeOf(KeywordExtractionSession session, String keyword) {
-    KeywordResult existing = session.resultsByKeyword().get(keyword);
-    if (existing != null && existing.type() != null) {
-      return existing.type();
-    }
-    return KeywordClassifier.classify(keyword);
+      String sessionId, List<String> chunk, Throwable e) {
+    return Flux.fromIterable(chunk)
+        .flatMap(
+            k -> {
+              KeywordType type = KeywordClassifier.classify(k);
+              return sessions
+                  .markFailed(sessionId, KeywordResult.failed(k, type, e.getMessage()))
+                  .thenReturn(k);
+            },
+            8)
+        .then(Mono.just(Collections.emptyList()));
   }
 
   private List<List<String>> chunk(List<String> all, int size) {

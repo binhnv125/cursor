@@ -6,10 +6,12 @@ import com.example.keywordextractor.domain.KeywordExtractionAllResponse;
 import com.example.keywordextractor.domain.KeywordExtractionCheckResponse;
 import com.example.keywordextractor.domain.KeywordExtractionRequest;
 import com.example.keywordextractor.domain.KeywordExtractionResponse;
-import com.example.keywordextractor.domain.KeywordExtractionSession;
 import com.example.keywordextractor.domain.KeywordResult;
 import com.example.keywordextractor.domain.KeywordType;
 import com.example.keywordextractor.domain.SessionStatus;
+import com.example.keywordextractor.queue.RedisEnrichmentJobQueue;
+import com.example.keywordextractor.session.RedisSessionRepository;
+import com.example.keywordextractor.session.RedisSessionRepository.SessionMeta;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,31 +21,31 @@ import reactor.core.publisher.Mono;
 
 @Service
 public class KeywordExtractionService {
-  private final SessionStore sessionStore;
   private final UrlContentFetcher urlContentFetcher;
   private final PromptBuilder promptBuilder;
   private final AnthropicClient anthropicClient;
   private final KeywordJsonParser keywordJsonParser;
   private final NaverEnrichmentService naverEnrichmentService;
-  private final KeywordBackgroundProcessor backgroundProcessor;
+  private final RedisEnrichmentJobQueue jobQueue;
+  private final RedisSessionRepository sessions;
   private final AppProperties appProperties;
 
   public KeywordExtractionService(
-      SessionStore sessionStore,
       UrlContentFetcher urlContentFetcher,
       PromptBuilder promptBuilder,
       AnthropicClient anthropicClient,
       KeywordJsonParser keywordJsonParser,
       NaverEnrichmentService naverEnrichmentService,
-      KeywordBackgroundProcessor backgroundProcessor,
+      RedisEnrichmentJobQueue jobQueue,
+      RedisSessionRepository sessions,
       AppProperties appProperties) {
-    this.sessionStore = sessionStore;
     this.urlContentFetcher = urlContentFetcher;
     this.promptBuilder = promptBuilder;
     this.anthropicClient = anthropicClient;
     this.keywordJsonParser = keywordJsonParser;
     this.naverEnrichmentService = naverEnrichmentService;
-    this.backgroundProcessor = backgroundProcessor;
+    this.jobQueue = jobQueue;
+    this.sessions = sessions;
     this.appProperties = appProperties;
   }
 
@@ -73,58 +75,81 @@ public class KeywordExtractionService {
                 pending.add(KeywordResult.pending(k, type));
               }
 
-              KeywordExtractionSession session =
-                  new KeywordExtractionSession(sessionId, Instant.now(), req, keywords);
-              session.initPending(pending);
-              sessionStore.put(session);
-
               List<String> first = keywords.subList(0, Math.min(firstPageSize, keywords.size()));
               List<String> remaining =
                   keywords.size() > first.size() ? keywords.subList(first.size(), keywords.size()) : List.of();
 
-              return naverEnrichmentService
-                  .enrichAndUpdate(session, first, concurrency)
+              return sessions
+                  .createSession(sessionId, req, keywords, pending)
+                  .then(naverEnrichmentService.enrichAndPersist(sessionId, first, concurrency))
                   .doOnSuccess(
-                      ignored ->
-                          backgroundProcessor
-                              .processRemaining(session, remaining, concurrency)
-                              .subscribe())
-                  .map(
-                      ignored ->
-                          new KeywordExtractionResponse(
-                              session.sessionId(),
-                              session.total(),
-                              session.doneCount(),
-                              session.failedCount(),
-                              session.status(),
-                              first.stream().map(k -> session.resultsByKeyword().get(k)).toList()));
+                      ignored -> {
+                        // enqueue remaining keywords for worker processing
+                        for (List<String> chunk : chunk(remaining, 30)) {
+                          jobQueue.enqueue(sessionId, chunk);
+                        }
+                      })
+                  .then(sessions.getMetaRequired(sessionId))
+                  .flatMap(
+                      meta ->
+                          sessions
+                              .getResults(sessionId, first)
+                              .map(
+                                  firstResults ->
+                                      new KeywordExtractionResponse(
+                                          sessionId,
+                                          meta.totalKeywords(),
+                                          meta.doneCount(),
+                                          meta.failedCount(),
+                                          meta.status(),
+                                          firstResults)));
             });
   }
 
   public Mono<KeywordExtractionCheckResponse> check(String sessionId) {
-    KeywordExtractionSession session = sessionStore.getRequired(sessionId);
-    boolean all = session.status() == SessionStatus.COMPLETED;
-    return Mono.just(
-        new KeywordExtractionCheckResponse(
-            session.sessionId(),
-            session.total(),
-            session.doneCount(),
-            session.failedCount(),
-            session.status(),
-            all));
+    return sessions
+        .getMetaRequired(sessionId)
+        .map(
+            meta ->
+                new KeywordExtractionCheckResponse(
+                    meta.sessionId(),
+                    meta.totalKeywords(),
+                    meta.doneCount(),
+                    meta.failedCount(),
+                    meta.status(),
+                    meta.status() == SessionStatus.COMPLETED));
   }
 
   public Mono<KeywordExtractionAllResponse> all(String sessionId) {
-    KeywordExtractionSession session = sessionStore.getRequired(sessionId);
-    List<KeywordResult> ordered =
-        session.orderedKeywords().stream().map(k -> session.resultsByKeyword().get(k)).toList();
-    return Mono.just(
-        new KeywordExtractionAllResponse(
-            session.sessionId(),
-            session.total(),
-            session.doneCount(),
-            session.failedCount(),
-            session.status(),
-            ordered));
+    return sessions
+        .getMetaRequired(sessionId)
+        .flatMap(
+            meta ->
+                sessions
+                    .getOrderedKeywords(sessionId)
+                    .flatMap(
+                        orderedKeywords ->
+                            sessions
+                                .getResults(sessionId, orderedKeywords)
+                                .map(
+                                    ordered ->
+                                        new KeywordExtractionAllResponse(
+                                            meta.sessionId(),
+                                            meta.totalKeywords(),
+                                            meta.doneCount(),
+                                            meta.failedCount(),
+                                            meta.status(),
+                                            ordered))));
+  }
+
+  private List<List<String>> chunk(List<String> all, int size) {
+    if (all == null || all.isEmpty()) {
+      return List.of();
+    }
+    List<List<String>> out = new ArrayList<>();
+    for (int i = 0; i < all.size(); i += size) {
+      out.add(all.subList(i, Math.min(all.size(), i + size)));
+    }
+    return out;
   }
 }

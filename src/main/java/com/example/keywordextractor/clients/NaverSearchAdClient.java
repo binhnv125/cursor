@@ -4,6 +4,7 @@ import com.example.keywordextractor.config.NaverSearchAdProperties;
 import com.example.keywordextractor.domain.KeywordBid;
 import com.example.keywordextractor.domain.KeywordStats;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.example.keywordextractor.ratelimit.NaverRateLimiter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -23,12 +24,17 @@ public class NaverSearchAdClient {
   private final WebClient webClient;
   private final NaverSearchAdProperties props;
   private final NaverCredentialManager credentialManager;
+  private final NaverRateLimiter rateLimiter;
 
   public NaverSearchAdClient(
-      WebClient webClient, NaverSearchAdProperties props, NaverCredentialManager credentialManager) {
+      WebClient webClient,
+      NaverSearchAdProperties props,
+      NaverCredentialManager credentialManager,
+      NaverRateLimiter rateLimiter) {
     this.webClient = webClient;
     this.props = props;
     this.credentialManager = credentialManager;
+    this.rateLimiter = rateLimiter;
   }
 
   public Mono<Map<String, KeywordStats>> fetchKeywordStatsBatch(List<String> keywords) {
@@ -47,23 +53,28 @@ public class NaverSearchAdClient {
           return Mono.usingWhen(
               credentialManager.acquire(),
               lease ->
-                  signedGet(lease, pathWithQuery)
-                      .bodyToMono(KeywordToolResponse.class)
-                      .timeout(timeout())
-                      .map(
-                          resp -> {
-                            if (resp == null || resp.keywordList == null) {
-                              return Map.<String, KeywordStats>of();
-                            }
-                            Map<String, KeywordStats> out = new HashMap<>();
-                            for (KeywordToolItem it : resp.keywordList) {
-                              if (it == null || it.relKeyword == null || it.relKeyword.isBlank()) {
-                                continue;
-                              }
-                              out.put(it.relKeyword, it.toStats());
-                            }
-                            return out;
-                          }),
+                  rateLimiter
+                      .acquire(lease.customerId())
+                      .then(
+                          signedGet(lease, pathWithQuery)
+                              .bodyToMono(KeywordToolResponse.class)
+                              .timeout(timeout())
+                              .map(
+                                  resp -> {
+                                    if (resp == null || resp.keywordList == null) {
+                                      return Map.<String, KeywordStats>of();
+                                    }
+                                    Map<String, KeywordStats> out = new HashMap<>();
+                                    for (KeywordToolItem it : resp.keywordList) {
+                                      if (it == null
+                                          || it.relKeyword == null
+                                          || it.relKeyword.isBlank()) {
+                                        continue;
+                                      }
+                                      out.put(it.relKeyword, it.toStats());
+                                    }
+                                    return out;
+                                  })),
               lease -> Mono.fromRunnable(lease::close));
         });
   }
@@ -84,23 +95,26 @@ public class NaverSearchAdClient {
           return Mono.usingWhen(
               credentialManager.acquire(),
               lease ->
-                  signedPost(lease, pathWithQuery, req)
-                      .bodyToMono(MedianBidResponse.class)
-                      .timeout(timeout())
-                      .map(
-                          resp -> {
-                            if (resp == null || resp.items == null) {
-                              return Map.<String, Integer>of();
-                            }
-                            Map<String, Integer> out = new HashMap<>();
-                            for (MedianBidResult r : resp.items) {
-                              if (r == null || r.keyword == null || r.keyword.isBlank()) {
-                                continue;
-                              }
-                              out.put(r.keyword, r.resolvedBid());
-                            }
-                            return out;
-                          }),
+                  rateLimiter
+                      .acquire(lease.customerId())
+                      .then(
+                          signedPost(lease, pathWithQuery, req)
+                              .bodyToMono(MedianBidResponse.class)
+                              .timeout(timeout())
+                              .map(
+                                  resp -> {
+                                    if (resp == null || resp.items == null) {
+                                      return Map.<String, Integer>of();
+                                    }
+                                    Map<String, Integer> out = new HashMap<>();
+                                    for (MedianBidResult r : resp.items) {
+                                      if (r == null || r.keyword == null || r.keyword.isBlank()) {
+                                        continue;
+                                      }
+                                      out.put(r.keyword, r.resolvedBid());
+                                    }
+                                    return out;
+                                  })),
               lease -> Mono.fromRunnable(lease::close));
         });
   }

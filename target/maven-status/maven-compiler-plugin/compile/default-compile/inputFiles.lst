@@ -29,7 +29,11 @@
 /workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageEntity.java
 /workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageId.java
 /workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageRepository.java
-/workspace/src/main/java/com/example/keywordextractor/service/KeywordBackgroundProcessor.java
+/workspace/src/main/java/com/example/keywordextractor/queue/EnrichmentJob.java
+/workspace/src/main/java/com/example/keywordextractor/queue/RedisEnrichmentJobQueue.java
+/workspace/src/main/java/com/example/keywordextractor/queue/RedisEnrichmentJobWorker.java
+/workspace/src/main/java/com/example/keywordextractor/ratelimit/NaverRateLimiter.java
+/workspace/src/main/java/com/example/keywordextractor/ratelimit/RateLimitTimeoutException.java
 /workspace/src/main/java/com/example/keywordextractor/service/KeywordClassifier.java
 /workspace/src/main/java/com/example/keywordextractor/service/KeywordExtractionService.java
 /workspace/src/main/java/com/example/keywordextractor/service/KeywordJsonParser.java
@@ -39,3 +43,4 @@
 /workspace/src/main/java/com/example/keywordextractor/service/SessionNotFoundException.java
 /workspace/src/main/java/com/example/keywordextractor/service/SessionStore.java
 /workspace/src/main/java/com/example/keywordextractor/service/UrlContentFetcher.java
+/workspace/src/main/java/com/example/keywordextractor/session/RedisSessionRepository.java

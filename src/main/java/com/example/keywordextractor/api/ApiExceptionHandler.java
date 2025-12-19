@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.example.keywordextractor.clients.NoNaverCredentialAvailableException;
+import com.example.keywordextractor.ratelimit.RateLimitTimeoutException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -29,5 +30,11 @@ public class ApiExceptionHandler {
   public ResponseEntity<ErrorResponse> handleNaverQuota(NoNaverCredentialAvailableException e) {
     return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
         .body(new ErrorResponse("NAVER_NO_CREDENTIAL_AVAILABLE", e.getMessage(), Instant.now()));
+  }
+
+  @ExceptionHandler(RateLimitTimeoutException.class)
+  public ResponseEntity<ErrorResponse> handleRateLimitTimeout(RateLimitTimeoutException e) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .body(new ErrorResponse("RATE_LIMIT_TIMEOUT", e.getMessage(), Instant.now()));
   }
 }
