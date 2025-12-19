@@ -19,24 +19,35 @@ import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 public class KeywordDetailService {
   private final NaverDatalabClient datalab;
   private final NaverSearchAdClient searchAd;
   private final ZoneId zone;
+  private final KeywordMstService keywordMstService;
 
   public KeywordDetailService(
-      NaverDatalabClient datalab, NaverSearchAdClient searchAd, NaverOpenApiProperties props) {
+      NaverDatalabClient datalab,
+      NaverSearchAdClient searchAd,
+      NaverOpenApiProperties props,
+      KeywordMstService keywordMstService) {
     this.datalab = datalab;
     this.searchAd = searchAd;
     this.zone = ZoneId.of(props.timezone() == null || props.timezone().isBlank() ? "Asia/Seoul" : props.timezone());
+    this.keywordMstService = keywordMstService;
   }
 
   public Mono<KeywordDetailResponse> detail(KeywordDetailRequest req) {
     LocalDate today = LocalDate.now(zone);
     LocalDate oneYearStart = today.minusYears(1).plusDays(1);
     LocalDate oneMonthStart = today.minusMonths(1).plusDays(1);
+
+    Mono<Void> saveMapping =
+        Mono.fromRunnable(() -> keywordMstService.upsert(req.keyword(), req.categoryId()))
+            .subscribeOn(Schedulers.boundedElastic())
+            .then();
 
     Mono<NaverDatalabAge> age =
         datalab
@@ -65,7 +76,7 @@ public class KeywordDetailService {
 
     Mono<NaverSearchAdRankBid> rankBid = searchAd.fetchRankBids(req.keyword());
 
-    return Mono.zip(age, gender, device, monthlyTrend, weekdayRatio, rankBid)
+    return saveMapping.then(Mono.zip(age, gender, device, monthlyTrend, weekdayRatio, rankBid))
         .map(
             t ->
                 new KeywordDetailResponse(

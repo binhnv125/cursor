@@ -19,6 +19,7 @@
 /workspace/src/main/java/com/example/keywordextractor/detail/KeywordDetailRequest.java
 /workspace/src/main/java/com/example/keywordextractor/detail/KeywordDetailResponse.java
 /workspace/src/main/java/com/example/keywordextractor/detail/KeywordDetailService.java
+/workspace/src/main/java/com/example/keywordextractor/detail/KeywordMstService.java
 /workspace/src/main/java/com/example/keywordextractor/domain/KeywordBid.java
 /workspace/src/main/java/com/example/keywordextractor/domain/KeywordExtractionAllResponse.java
 /workspace/src/main/java/com/example/keywordextractor/domain/KeywordExtractionCheckResponse.java
@@ -35,6 +36,8 @@
 /workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageEntity.java
 /workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageId.java
 /workspace/src/main/java/com/example/keywordextractor/persistence/NaverCredentialUsageRepository.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/keyword/KeywordMstEntity.java
+/workspace/src/main/java/com/example/keywordextractor/persistence/keyword/KeywordMstRepository.java
 /workspace/src/main/java/com/example/keywordextractor/queue/EnrichmentJob.java
 /workspace/src/main/java/com/example/keywordextractor/queue/RedisEnrichmentJobQueue.java
 /workspace/src/main/java/com/example/keywordextractor/queue/RedisEnrichmentJobWorker.java
